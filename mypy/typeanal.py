@@ -15,6 +15,7 @@ from mypy.nodes import (
 from mypy.sametypes import is_same_type
 from mypy.exprtotype import expr_to_unanalyzed_type, TypeTranslationError
 from mypy.subtypes import satisfies_upper_bound
+from mypy.expand_variadic import IsVariadic
 from mypy import nodes
 from mypy import experiments
 
@@ -104,12 +105,27 @@ class TypeAnalyser(TypeVisitor[Type]):
             elif fullname == 'typing.Any':
                 return AnyType()
             elif fullname == 'typing.Tuple':
-                if len(t.args) == 2 and isinstance(t.args[1], EllipsisType):
+                args = t.args
+                ellipsis = False
+                if isinstance(args[-1], EllipsisType):
+                    args = args[:-1]
+                    ellipsis = True
+                analyzed_args = self.anal_array(args)
+                if (len(args) >= 1
+                    and ellipsis
+                    and analyzed_args[-1].accept(IsVariadic())):
+
+                    # Tuple [Ts, ...] (variadic, variable-length tuple)
+                    return self.expandable_tuple_type(analyzed_args)
+
+                elif len(args) == 1 and ellipsis:
                     # Tuple[T, ...] (uniform, variable-length tuple)
                     node = self.lookup_fqn_func('builtins.tuple')
                     tuple_info = cast(TypeInfo, node.node)
-                    return Instance(tuple_info, [t.args[0].accept(self)], t.line)
-                return self.tuple_type(self.anal_array(t.args))
+
+                    return Instance(tuple_info, [analyzed_args[0]], t.line)
+
+                return self.tuple_type(analyzed_args)
             elif fullname == 'typing.Union':
                 items = self.anal_array(t.args)
                 items = [item for item in items if not isinstance(item, Void)]
@@ -279,7 +295,7 @@ class TypeAnalyser(TypeVisitor[Type]):
         for vd in var_defs:
             a.append(TypeVarDef(vd.name, vd.id.raw_id, self.anal_array(vd.values),
                                 vd.upper_bound.accept(self),
-                                vd.variance,
+                                vd.variance, vd.variadic,
                                 vd.line))
         return a
 
@@ -290,6 +306,12 @@ class TypeAnalyser(TypeVisitor[Type]):
 
     def tuple_type(self, items: List[Type]) -> TupleType:
         return TupleType(items, fallback=self.builtin_type('builtins.tuple', [AnyType()]))
+    def expandable_tuple_type(self, items: List[Type]) -> TupleType:
+        return TupleType(
+            items,
+            fallback=self.builtin_type('builtins.tuple', [AnyType()]),
+            expand_last_item=True
+        )
 
 
 class TypeAnalyserPass3(TypeVisitor[None]):

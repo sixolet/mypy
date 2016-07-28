@@ -736,20 +736,29 @@ class TupleType(Type):
             (this is currently always builtins.tuple, but it could be different for named
             tuples, for example)
         implicit: if True, derived from a tuple expression (t,....) instead of Tuple[t, ...]
+        expand_last_item: if True, this tuple is awaiting a variadic type
+            expansion or a conversion to the fallback. The last type in `items`
+            must be variadic.
+
     """
 
     items = None  # type: List[Type]
     fallback = None  # type: Instance
     implicit = False
+    expand_last_item = False
 
     def __init__(self, items: List[Type], fallback: Instance, line: int = -1,
-                 implicit: bool = False) -> None:
+                 implicit: bool = False, expand_last_item: bool = False) -> None:
         self.items = items
         self.fallback = fallback
         self.implicit = implicit
+        self.expand_last_item = expand_last_item
         super().__init__(line)
 
     def length(self) -> int:
+        assert not expand_last_item, (
+            "A tuple awaiting a variadic type expansion has no defined length"
+        )
         return len(self.items)
 
     def accept(self, visitor: 'TypeVisitor[T]') -> T:
@@ -760,6 +769,7 @@ class TupleType(Type):
                 'items': [t.serialize() for t in self.items],
                 'fallback': self.fallback.serialize(),
                 'implicit': self.implicit,
+                'expand_last_item': self.expand_last_item,
                 }
 
     @classmethod
@@ -767,7 +777,9 @@ class TupleType(Type):
         assert data['.class'] == 'TupleType'
         return TupleType([Type.deserialize(t) for t in data['items']],
                          Instance.deserialize(data['fallback']),
-                         implicit=data['implicit'])
+                         implicit=data['implicit'],
+                         expand_last_item=data['expand_last_item'],
+        )
 
 
 class StarType(Type):
@@ -1232,6 +1244,8 @@ class TypeStrVisitor(TypeVisitor[str]):
             fallback_name = t.fallback.type.fullname()
             if fallback_name != 'builtins.tuple':
                 return 'Tuple[{}, fallback={}]'.format(s, t.fallback.accept(self))
+        if t.expand_last_item:
+            return 'Tuple[{}, ...]'.format(s)
         return 'Tuple[{}]'.format(s)
 
     def visit_star_type(self, t: StarType) -> str:
@@ -1293,7 +1307,7 @@ class TypeFold(TypeVisitor):
         self.zero = zero
 
     @abstractmethod
-    def combine(res: T, n: T) -> T:
+    def combine(self, res: T, n: T) -> T:
         pass
 
     def visit_unbound_type(self, t: UnboundType) -> bool:

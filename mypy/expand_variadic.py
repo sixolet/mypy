@@ -2,12 +2,14 @@ from typing import (
     List,
     Optional,
     Tuple,
+    Dict,
 )
 from collections import defaultdict
 
 from mypy.types import (
     ANY_TYPE_STRATEGY,
     CallableType,
+    TupleType,
     Type,
     TypeQuery,
     TypeFold,
@@ -33,10 +35,6 @@ def infer_expansions_for_callable(
         callee_kind = callee.arg_kinds[i]
         callee_arg = callee.arg_types[i]
         if callee_kind == nodes.ARG_STAR and callee_arg.accept(IsVariadic()):
-            print(
-                "Let's expand {callee_arg} to {n} type vars!"
-                .format(callee_arg=callee_arg, n=len(actuals))
-            )
             expansions.append(
                 (callee_arg.accept(FetchVariadicTypeVar()), len(actuals))
             )
@@ -80,7 +78,6 @@ def expand_variadic_callable(
         if kind == nodes.ARG_STAR and typ.accept(IsVariadic()):
             # Substitute in for the expansion
             old_id = typ.accept(FetchVariadicTypeVar())
-            print("OLD ID", old_id, "exps", exps)
             assert old_id in exps
             for idx in range(exps[old_id]):
                 new_id = TypeVarId.new(1) # Uhh is this a "meta" variable?
@@ -104,7 +101,7 @@ def expand_variadic_callable(
     ] + additional_variables
 
     # TODO: Expand type vars in return type
-    new_ret_type = callee.ret_type
+    new_ret_type = callee.ret_type.accept(ExpandVariadic(substitutions))
 
     return CallableType(
         arg_types=new_types,
@@ -129,7 +126,6 @@ def infer_expansions(
         arg_type: Type,
         arg_kind: int
 ) -> List[Tuple[TypeVarId, int]]:
-    print("callee arg", callee_arg_type, "arg_type", arg_type, "kind", arg_kind)
     if arg_kind == nodes.ARG_STAR:
         if isinstance(arg_type, Instance):
             if arg_type.args and callee_arg_type.is_variadic():
@@ -150,7 +146,7 @@ class FetchVariadicTypeVar(TypeFold[TypeVarId]):
         return super(FetchVariadicTypeVar, self).__init__(None, None)
 
 
-    def combine(res: TypeVarId, n: TypeVarId):
+    def combine(self, res: TypeVarId, n: TypeVarId):
         if res is not None:
             return res
         return n
@@ -181,3 +177,32 @@ class SubstituteVariable(TypeTranslator):
             return TypeVarType(self.var, t.line)
         else:
             return t
+
+class ExpandVariadic(TypeTranslator):
+
+    substitutions = None # type: Dict[TypeVarId, List[TypeVarId]]
+
+    def __init__(self, substitutions: Dict[TypeVarId, List[TypeVarId]]):
+        self.substitutions = substitutions
+
+    def visit_tuple_type(self, t: TupleType) -> Type:
+        if t.expand_last_item:
+
+            variadic_id = t.accept(FetchVariadicTypeVar())
+            if variadic_id in self.substitutions:
+                # We have some type variables to substitute in
+                new_items = t.items[:-1] # all but the last
+                for idx, new_var_id in enumerate(self.substitutions[variadic_id]):
+                    substitutor = SubstituteVariable(variadic_id, new_var_id, idx)
+                    new_items.append(t.items[-1].accept(substitutor))
+                return TupleType(
+                    self.translate_types(new_items),
+                    t.fallback,
+                    implicit=t.implicit,
+                    expand_last_item=False
+                )
+            else:
+                # Use the fallback, because we have no way of substituting.
+                return t.fallback
+        else:
+            return super(ExpandVariadic, self).visit_tuple_type(t)

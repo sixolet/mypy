@@ -357,7 +357,7 @@ class SemanticAnalyzer(NodeVisitor):
                 next_tvar_id = self.next_function_tvar_id()
                 defs = [TypeVarDef(tvar[0], next_tvar_id - i,
                                    tvar[1].values, tvar[1].upper_bound,
-                                   tvar[1].variance)
+                                   tvar[1].variance, tvar[1].variadic)
                         for i, tvar in enumerate(typevars)]
                 functype.variables = defs
 

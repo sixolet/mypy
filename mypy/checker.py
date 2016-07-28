@@ -10,6 +10,7 @@ from typing import (
 )
 
 from mypy.errors import Errors, report_internal_error
+from mypy.expand_variadic import ExpandVariadic
 from mypy.nodes import (
     SymbolTable, Node, MypyFile, Var,
     OverloadedFuncDef, FuncDef, FuncItem, FuncBase, TypeInfo,
@@ -318,6 +319,7 @@ class TypeChecker(NodeVisitor[Type]):
 
     def visit_func_def(self, defn: FuncDef) -> Type:
         """Type check a function definition."""
+
         self.check_func_item(defn, name=defn.name())
         if defn.info:
             if not defn.is_dynamic():
@@ -457,8 +459,15 @@ class TypeChecker(NodeVisitor[Type]):
                                 or isinstance(typ.ret_type.args[2], AnyType)):
                             self.fail(messages.INVALID_GENERATOR_RETURN_ITEM_TYPE, typ)
 
+                # If our return type is variadic, we need to expand it to the
+                # version that takes any number of arguments, for typechecking
+                # the body.  We do this by arranging the ExpandVariadic visitor
+                # with no substitutions.
+                expander = ExpandVariadic({})
+                ret_type = typ.ret_type.accept(expander)
+
                 # Push return type.
-                self.return_types.append(typ.ret_type)
+                self.return_types.append(ret_type)
 
                 # Store argument types.
                 for i in range(len(typ.arg_types)):

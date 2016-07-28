@@ -348,7 +348,7 @@ def add_class_tvars(t: Type, info: TypeInfo, is_classmethod: bool,
                     builtin_type: Callable[[str], Instance]) -> Type:
     if isinstance(t, CallableType):
         # TODO: Should we propagate type variable values?
-        vars = [TypeVarDef(n, i + 1, None, builtin_type('builtins.object'), tv.variance)
+        vars = [TypeVarDef(n, i + 1, None, builtin_type('builtins.object'), tv.variance, tv.variadic)
                 for (i, n), tv in zip(enumerate(info.type_vars), info.defn.type_vars)]
         arg_types = t.arg_types
         arg_kinds = t.arg_kinds
