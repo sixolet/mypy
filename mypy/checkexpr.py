@@ -35,6 +35,7 @@ from mypy.semanal import self_type
 from mypy.constraints import get_actual_type
 from mypy.checkstrformat import StringFormatterChecker
 from mypy.expandtype import expand_type
+from mypy.expand_variadic import expand_variadic_callable
 import mypy.checkexpr
 
 from mypy import experiments
@@ -239,6 +240,21 @@ class ExpressionChecker:
                 callee = freshen_generic_callable(callee)
                 callee = self.infer_function_type_arguments_using_context(
                     callee, context)
+                print("BEFORE", callee)
+                callee = expand_variadic_callable(
+                    callee,
+                    args,
+                    arg_kinds,
+                    formal_to_actual,
+                )
+                print("AFTER", callee)
+                # Recalculate formal to actual mappings after transformation,
+                # since it messed with argument counts and kinds.
+                formal_to_actual = map_actuals_to_formals(
+                    arg_kinds, arg_names,
+                    callee.arg_kinds, callee.arg_names,
+                    lambda i: self.accept(args[i])
+                )
                 callee = self.infer_function_type_arguments(
                     callee, args, arg_kinds, formal_to_actual, context)
 
