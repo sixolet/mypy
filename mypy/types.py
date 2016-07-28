@@ -1266,6 +1266,96 @@ ANY_TYPE_STRATEGY = 0   # Return True if any of the results are True.
 ALL_TYPES_STRATEGY = 1  # Return True if all of the results are True.
 
 
+class TypeFold(TypeVisitor):
+    """Visitor for performing folds over trees of types
+    """
+
+    default = False  # Default result
+    strategy = 0     # Strategy for combining multiple values (ANY_TYPE_STRATEGY or ALL_TYPES_...).
+
+    def __init__(
+            self,
+            default: T,
+            zero: T,
+    ) -> None:
+        """Construct a fold visitor.
+        """
+        self.default = default
+        self.zero = zero
+
+    @abstractmethod
+    def combine(res: T, n: T) -> T:
+        pass
+
+    def visit_unbound_type(self, t: UnboundType) -> bool:
+        return self.default
+
+    def visit_type_list(self, t: TypeList) -> bool:
+        return self.default
+
+    def visit_error_type(self, t: ErrorType) -> bool:
+        return self.default
+
+    def visit_any(self, t: AnyType) -> bool:
+        return self.default
+
+    def visit_void(self, t: Void) -> bool:
+        return self.default
+
+    def visit_uninhabited_type(self, t: UninhabitedType) -> bool:
+        return self.default
+
+    def visit_none_type(self, t: NoneTyp) -> bool:
+        return self.default
+
+    def visit_erased_type(self, t: ErasedType) -> bool:
+        return self.default
+
+    def visit_deleted_type(self, t: DeletedType) -> bool:
+        return self.default
+
+    def visit_type_var(self, t: TypeVarType) -> bool:
+        return self.default
+
+    def visit_partial_type(self, t: PartialType) -> bool:
+        return self.default
+
+    def visit_instance(self, t: Instance) -> bool:
+        return self.fold_types(t.args)
+
+    def visit_callable_type(self, t: CallableType) -> bool:
+        # FIX generics
+        return self.fold_types(t.arg_types + [t.ret_type])
+
+    def visit_tuple_type(self, t: TupleType) -> bool:
+        return self.fold_types(t.items)
+
+    def visit_star_type(self, t: StarType) -> bool:
+        return t.type.accept(self)
+
+    def visit_union_type(self, t: UnionType) -> bool:
+        return self.fold_types(t.items)
+
+    def visit_overloaded(self, t: Overloaded) -> bool:
+        return self.fold_types(t.items())
+
+    def visit_type_type(self, t: TypeType) -> bool:
+        return t.item.accept(self)
+
+    def fold_types(self, types: Sequence[Type]) -> bool:
+        """Perform a query for a list of types.
+
+        Use the strategy constant to combine the results.
+        """
+        if not types:
+            # Use default result for empty list.
+            return self.default
+
+        res = self.zero
+        for t in types:
+            res = self.combine(res, t.accept(self))
+        return res
+
 class TypeQuery(TypeVisitor[bool]):
     """Visitor for performing simple boolean queries of types.
 
