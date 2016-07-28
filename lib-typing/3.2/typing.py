@@ -402,7 +402,7 @@ class TypeVar(TypingMeta, metaclass=TypingMeta, _root=True):
     """
 
     def __new__(cls, name, *constraints, bound=None,
-                covariant=False, contravariant=False):
+                covariant=False, contravariant=False, variadic=False):
         self = super().__new__(cls, name, (Final,), {}, _root=True)
         if covariant and contravariant:
             raise ValueError("Bivariant type variables are not supported.")

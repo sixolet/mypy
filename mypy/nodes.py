@@ -1629,15 +1629,22 @@ class TypeVarExpr(SymbolNode, Expression):
     # variable.
     variance = INVARIANT
 
+    # If the type variable is variadic, it can stand in for an arbitrary
+    # sequence of type variables.
+    variadic = False # type: bool
+
     def __init__(self, name: str, fullname: str,
                  values: List['mypy.types.Type'],
                  upper_bound: 'mypy.types.Type',
-                 variance: int=INVARIANT) -> None:
+                 variance: int=INVARIANT,
+                 variadic: bool=False
+    ) -> None:
         self._name = name
         self._fullname = fullname
         self.values = values
         self.upper_bound = upper_bound
         self.variance = variance
+        self.variadic=variadic
 
     def name(self) -> str:
         return self._name
@@ -1655,6 +1662,7 @@ class TypeVarExpr(SymbolNode, Expression):
                 'values': [t.serialize() for t in self.values],
                 'upper_bound': self.upper_bound.serialize(),
                 'variance': self.variance,
+                'variadic': self.variadic,
                 }
 
     @classmethod
@@ -1664,7 +1672,7 @@ class TypeVarExpr(SymbolNode, Expression):
                            data['fullname'],
                            [mypy.types.Type.deserialize(v) for v in data['values']],
                            mypy.types.Type.deserialize(data['upper_bound']),
-                           data['variance'])
+                           data['variance'], data['variadic'])
 
 
 class TypeAliasExpr(Expression):

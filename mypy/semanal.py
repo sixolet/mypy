@@ -687,7 +687,7 @@ class SemanticAnalyzer(NodeVisitor):
                 removed.append(i)
                 for j, (name, tvar_expr) in enumerate(tvars):
                     type_vars.append(TypeVarDef(name, j + 1, tvar_expr.values,
-                                                tvar_expr.upper_bound, tvar_expr.variance))
+                                                tvar_expr.upper_bound, tvar_expr.variance, tvar_expr.variadic))
         if type_vars:
             defn.type_vars = type_vars
             if defn.info:
@@ -1307,12 +1307,12 @@ class SemanticAnalyzer(NodeVisitor):
                                               s)
         if res is None:
             return
-        variance, upper_bound = res
+        variance, upper_bound, variadic = res
 
         # Yes, it's a valid type variable definition! Add it to the symbol table.
         node = self.lookup(name, s)
         node.kind = UNBOUND_TVAR
-        TypeVar = TypeVarExpr(name, node.fullname, values, upper_bound, variance)
+        TypeVar = TypeVarExpr(name, node.fullname, values, upper_bound, variance, variadic)
         TypeVar.line = call.line
         call.analyzed = TypeVar
         node.node = TypeVar
@@ -1350,10 +1350,11 @@ class SemanticAnalyzer(NodeVisitor):
                                    names: List[Optional[str]],
                                    kinds: List[int],
                                    has_values: bool,
-                                   context: Context) -> Optional[Tuple[int, Type]]:
+                                   context: Context) -> Optional[Tuple[int, Type, bool]]:
         covariant = False
         contravariant = False
         upper_bound = self.object_type()   # type: Type
+        variadic = False
         for param_value, param_name, param_kind in zip(args, names, kinds):
             if not param_kind == ARG_NAMED:
                 self.fail("Unexpected argument to TypeVar()", context)
@@ -1393,6 +1394,17 @@ class SemanticAnalyzer(NodeVisitor):
                 self.fail("Use TypeVar('T', t, ...) instead of TypeVar('T', values=(t, ...))",
                           context)
                 return None
+            elif param_name == 'variadic':
+                if isinstance(param_value, NameExpr):
+                    if param_value.name == 'True':
+                        variadic = True
+                    else:
+                        self.fail("TypeVar 'variadic' may only be 'True'", context)
+                        return None
+                else:
+                    self.fail("TypeVar 'variadic' may only be 'True'", context)
+                    return None
+
             else:
                 self.fail("Unexpected argument to TypeVar(): {}".format(param_name), context)
                 return None
@@ -1406,7 +1418,7 @@ class SemanticAnalyzer(NodeVisitor):
             variance = CONTRAVARIANT
         else:
             variance = INVARIANT
-        return (variance, upper_bound)
+        return (variance, upper_bound, variadic)
 
     def process_namedtuple_definition(self, s: AssignmentStmt) -> None:
         """Check if s defines a namedtuple; if yes, store the definition in symbol table."""

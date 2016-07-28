@@ -106,10 +106,11 @@ class TypeVarDef(mypy.nodes.Context):
     values = None  # type: List[Type]  # Value restriction, empty list if no restriction
     upper_bound = None  # type: Type
     variance = INVARIANT  # type: int
+    variadic = False # type: bool
     line = 0
 
     def __init__(self, name: str, id: Union[TypeVarId, int], values: Optional[List[Type]],
-                 upper_bound: Type, variance: int = INVARIANT, line: int = -1) -> None:
+                 upper_bound: Type, variance: int = INVARIANT, variadic: bool = False, line: int = -1) -> None:
         self.name = name
         if isinstance(id, int):
             id = TypeVarId(id)
@@ -117,13 +118,14 @@ class TypeVarDef(mypy.nodes.Context):
         self.values = values
         self.upper_bound = upper_bound
         self.variance = variance
+        self.variadic = variadic
         self.line = line
 
     @staticmethod
     def new_unification_variable(old: 'TypeVarDef') -> 'TypeVarDef':
         new_id = TypeVarId.new(meta_level=1)
         return TypeVarDef(old.name, new_id, old.values,
-                          old.upper_bound, old.variance, old.line)
+                          old.upper_bound, old.variance, old.variadic, old.line)
 
     def get_line(self) -> int:
         return self.line
@@ -144,6 +146,7 @@ class TypeVarDef(mypy.nodes.Context):
                 'values': None if self.values is None else [v.serialize() for v in self.values],
                 'upper_bound': self.upper_bound.serialize(),
                 'variance': self.variance,
+                'variadic': self.variadic,
                 }
 
     @classmethod
@@ -155,6 +158,7 @@ class TypeVarDef(mypy.nodes.Context):
                           else [Type.deserialize(v) for v in data['values']],
                           Type.deserialize(data['upper_bound']),
                           data['variance'],
+                          data['variadic'],
                           )
 
 
@@ -435,6 +439,7 @@ class TypeVarType(Type):
     upper_bound = None  # type: Type   # Upper bound for values
     # See comments in TypeVarDef for more about variance.
     variance = INVARIANT  # type: int
+    variadic = False # type: bool
 
     def __init__(self, binder: TypeVarDef, line: int = -1) -> None:
         self.name = binder.name
@@ -442,6 +447,7 @@ class TypeVarType(Type):
         self.values = binder.values
         self.upper_bound = binder.upper_bound
         self.variance = binder.variance
+        self.variadic = binder.variadic
         super().__init__(line)
 
     def accept(self, visitor: 'TypeVisitor[T]') -> T:
@@ -461,6 +467,7 @@ class TypeVarType(Type):
                 'values': [v.serialize() for v in self.values],
                 'upper_bound': self.upper_bound.serialize(),
                 'variance': self.variance,
+                'variadic': self.variadic,
                 }
 
     @classmethod
@@ -470,7 +477,9 @@ class TypeVarType(Type):
                            data['id'],
                            [Type.deserialize(v) for v in data['values']],
                            Type.deserialize(data['upper_bound']),
-                           data['variance'])
+                           data['variance'],
+                           data['variadic'],
+        )
         return TypeVarType(tvdef)
 
 
