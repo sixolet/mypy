@@ -686,8 +686,14 @@ class SemanticAnalyzer(NodeVisitor):
                     self.fail('Duplicate Generic in bases', defn)
                 removed.append(i)
                 for j, (name, tvar_expr) in enumerate(tvars):
-                    type_vars.append(TypeVarDef(name, j + 1, tvar_expr.values,
-                                                tvar_expr.upper_bound, tvar_expr.variance, tvar_expr.variadic))
+                    type_vars.append(
+                        TypeVarDef(
+                            name,
+                            j + 1,
+                            tvar_expr.values,
+                            tvar_expr.upper_bound,
+                            tvar_expr.variance,
+                            tvar_expr.variadic))
         if type_vars:
             defn.type_vars = type_vars
             if defn.info:

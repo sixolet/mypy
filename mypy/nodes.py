@@ -1631,20 +1631,20 @@ class TypeVarExpr(SymbolNode, Expression):
 
     # If the type variable is variadic, it can stand in for an arbitrary
     # sequence of type variables.
-    variadic = False # type: bool
+
+    variadic = False  # type: bool
 
     def __init__(self, name: str, fullname: str,
                  values: List['mypy.types.Type'],
                  upper_bound: 'mypy.types.Type',
                  variance: int=INVARIANT,
-                 variadic: bool=False
-    ) -> None:
+                 variadic: bool=False) -> None:
         self._name = name
         self._fullname = fullname
         self.values = values
         self.upper_bound = upper_bound
         self.variance = variance
-        self.variadic=variadic
+        self.variadic = variadic
 
     def name(self) -> str:
         return self._name

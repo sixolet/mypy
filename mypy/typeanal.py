@@ -107,13 +107,13 @@ class TypeAnalyser(TypeVisitor[Type]):
             elif fullname == 'typing.Tuple':
                 args = t.args
                 ellipsis = False
-                if isinstance(args[-1], EllipsisType):
+                if args and isinstance(args[-1], EllipsisType):
                     args = args[:-1]
                     ellipsis = True
                 analyzed_args = self.anal_array(args)
                 if (len(args) >= 1
-                    and ellipsis
-                    and analyzed_args[-1].accept(IsVariadic())):
+                        and ellipsis
+                        and analyzed_args[-1].accept(IsVariadic())):
 
                     # Tuple [Ts, ...] (variadic, variable-length tuple)
                     return self.expandable_tuple_type(analyzed_args)
@@ -124,6 +124,9 @@ class TypeAnalyser(TypeVisitor[Type]):
                     tuple_info = cast(TypeInfo, node.node)
 
                     return Instance(tuple_info, [analyzed_args[0]], t.line)
+                elif ellipsis:
+                    # Trigger the "Unexpected ..." error
+                    t.args[-1].accept(self)
 
                 return self.tuple_type(analyzed_args)
             elif fullname == 'typing.Union':
@@ -306,6 +309,7 @@ class TypeAnalyser(TypeVisitor[Type]):
 
     def tuple_type(self, items: List[Type]) -> TupleType:
         return TupleType(items, fallback=self.builtin_type('builtins.tuple', [AnyType()]))
+
     def expandable_tuple_type(self, items: List[Type]) -> TupleType:
         return TupleType(
             items,

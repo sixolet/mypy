@@ -106,11 +106,15 @@ class TypeVarDef(mypy.nodes.Context):
     values = None  # type: List[Type]  # Value restriction, empty list if no restriction
     upper_bound = None  # type: Type
     variance = INVARIANT  # type: int
-    variadic = False # type: bool
+    variadic = False  # type: bool
     line = 0
 
-    def __init__(self, name: str, id: Union[TypeVarId, int], values: Optional[List[Type]],
-                 upper_bound: Type, variance: int = INVARIANT, variadic: bool = False, line: int = -1) -> None:
+    def __init__(
+            self, name: str, id: Union[TypeVarId, int],
+            values: Optional[List[Type]],
+            upper_bound: Type, variance: int = INVARIANT,
+            variadic: bool = False, line: int = -1) -> None:
+
         self.name = name
         if isinstance(id, int):
             id = TypeVarId(id)
@@ -439,7 +443,7 @@ class TypeVarType(Type):
     upper_bound = None  # type: Type   # Upper bound for values
     # See comments in TypeVarDef for more about variance.
     variance = INVARIANT  # type: int
-    variadic = False # type: bool
+    variadic = False  # type: bool
 
     def __init__(self, binder: TypeVarDef, line: int = -1) -> None:
         self.name = binder.name
@@ -478,8 +482,7 @@ class TypeVarType(Type):
                            [Type.deserialize(v) for v in data['values']],
                            Type.deserialize(data['upper_bound']),
                            data['variance'],
-                           data['variadic'],
-        )
+                           data['variadic'])
         return TypeVarType(tvdef)
 
 
@@ -756,7 +759,7 @@ class TupleType(Type):
         super().__init__(line)
 
     def length(self) -> int:
-        assert not expand_last_item, (
+        assert not self.expand_last_item, (
             "A tuple awaiting a variadic type expansion has no defined length"
         )
         return len(self.items)
@@ -778,8 +781,7 @@ class TupleType(Type):
         return TupleType([Type.deserialize(t) for t in data['items']],
                          Instance.deserialize(data['fallback']),
                          implicit=data['implicit'],
-                         expand_last_item=data['expand_last_item'],
-        )
+                         expand_last_item=data['expand_last_item'])
 
 
 class StarType(Type):
@@ -1289,12 +1291,13 @@ ANY_TYPE_STRATEGY = 0   # Return True if any of the results are True.
 ALL_TYPES_STRATEGY = 1  # Return True if all of the results are True.
 
 
-class TypeFold(TypeVisitor):
+class TypeFold(TypeVisitor, Generic[T]):
     """Visitor for performing folds over trees of types
     """
 
-    default = False  # Default result
-    strategy = 0     # Strategy for combining multiple values (ANY_TYPE_STRATEGY or ALL_TYPES_...).
+    #  Default result
+    default = None  # type: T
+    zero = None     # type: T
 
     def __init__(
             self,
@@ -1310,62 +1313,62 @@ class TypeFold(TypeVisitor):
     def combine(self, res: T, n: T) -> T:
         pass
 
-    def visit_unbound_type(self, t: UnboundType) -> bool:
+    def visit_unbound_type(self, t: UnboundType) -> T:
         return self.default
 
-    def visit_type_list(self, t: TypeList) -> bool:
+    def visit_type_list(self, t: TypeList) -> T:
         return self.default
 
-    def visit_error_type(self, t: ErrorType) -> bool:
+    def visit_error_type(self, t: ErrorType) -> T:
         return self.default
 
-    def visit_any(self, t: AnyType) -> bool:
+    def visit_any(self, t: AnyType) -> T:
         return self.default
 
-    def visit_void(self, t: Void) -> bool:
+    def visit_void(self, t: Void) -> T:
         return self.default
 
-    def visit_uninhabited_type(self, t: UninhabitedType) -> bool:
+    def visit_uninhabited_type(self, t: UninhabitedType) -> T:
         return self.default
 
-    def visit_none_type(self, t: NoneTyp) -> bool:
+    def visit_none_type(self, t: NoneTyp) -> T:
         return self.default
 
-    def visit_erased_type(self, t: ErasedType) -> bool:
+    def visit_erased_type(self, t: ErasedType) -> T:
         return self.default
 
-    def visit_deleted_type(self, t: DeletedType) -> bool:
+    def visit_deleted_type(self, t: DeletedType) -> T:
         return self.default
 
-    def visit_type_var(self, t: TypeVarType) -> bool:
+    def visit_type_var(self, t: TypeVarType) -> T:
         return self.default
 
-    def visit_partial_type(self, t: PartialType) -> bool:
+    def visit_partial_type(self, t: PartialType) -> T:
         return self.default
 
-    def visit_instance(self, t: Instance) -> bool:
+    def visit_instance(self, t: Instance) -> T:
         return self.fold_types(t.args)
 
-    def visit_callable_type(self, t: CallableType) -> bool:
+    def visit_callable_type(self, t: CallableType) -> T:
         # FIX generics
         return self.fold_types(t.arg_types + [t.ret_type])
 
-    def visit_tuple_type(self, t: TupleType) -> bool:
+    def visit_tuple_type(self, t: TupleType) -> T:
         return self.fold_types(t.items)
 
-    def visit_star_type(self, t: StarType) -> bool:
+    def visit_star_type(self, t: StarType) -> T:
         return t.type.accept(self)
 
-    def visit_union_type(self, t: UnionType) -> bool:
+    def visit_union_type(self, t: UnionType) -> T:
         return self.fold_types(t.items)
 
-    def visit_overloaded(self, t: Overloaded) -> bool:
+    def visit_overloaded(self, t: Overloaded) -> T:
         return self.fold_types(t.items())
 
-    def visit_type_type(self, t: TypeType) -> bool:
+    def visit_type_type(self, t: TypeType) -> T:
         return t.item.accept(self)
 
-    def fold_types(self, types: Sequence[Type]) -> bool:
+    def fold_types(self, types: Sequence[Type]) -> T:
         """Perform a query for a list of types.
 
         Use the strategy constant to combine the results.
@@ -1378,6 +1381,7 @@ class TypeFold(TypeVisitor):
         for t in types:
             res = self.combine(res, t.accept(self))
         return res
+
 
 class TypeQuery(TypeVisitor[bool]):
     """Visitor for performing simple boolean queries of types.
