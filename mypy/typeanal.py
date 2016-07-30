@@ -265,13 +265,22 @@ class TypeAnalyser(TypeVisitor[Type]):
         elif len(t.args) == 2:
             ret_type = t.args[1].accept(self)
             if isinstance(t.args[0], TypeList):
-                # Callable[[ARG, ...], RET] (ordinary callable type)
                 args = t.args[0].items
-                return CallableType(self.anal_array(args),
-                                    [nodes.ARG_POS] * len(args),
-                                    [None] * len(args),
-                                    ret_type=ret_type,
-                                    fallback=fallback)
+                if len(args) >= 2 and isinstance(args[-1], EllipsisType):
+                    # Callable[[Ts, ...], RET] (callable with a *args, but spelled with an ellipsis)
+                    args = args[:-1]
+                    return CallableType(self.anal_array(args),
+                                        [nodes.ARG_POS] * (len(args) - 1)  + [nodes.ARG_STAR],
+                                        [None] * len(args),
+                                        ret_type=ret_type,
+                                        fallback=fallback)
+                else:
+                    # Callable[[ARG1, ARG2 .. ARGN], RET] (ordinary callable type)
+                    return CallableType(self.anal_array(args),
+                                        [nodes.ARG_POS] * len(args),
+                                        [None] * len(args),
+                                        ret_type=ret_type,
+                                        fallback=fallback)
             elif isinstance(t.args[0], EllipsisType):
                 # Callable[..., RET] (with literal ellipsis; accept arbitrary arguments)
                 return CallableType([AnyType(), AnyType()],

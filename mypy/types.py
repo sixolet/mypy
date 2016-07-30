@@ -538,6 +538,8 @@ class CallableType(FunctionLike):
     # Defined for signatures that require special handling (currently only value is 'dict'
     # for a signature similar to 'dict')
     special_sig = None  # type: Optional[str]
+    # True if we should expand a variadic last argument in the callable type at the right moment
+    expand_last_argument = False
 
     def __init__(self,
                  arg_types: List[Type],

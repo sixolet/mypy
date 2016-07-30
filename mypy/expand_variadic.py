@@ -125,6 +125,20 @@ class IsVariadic(TypeQuery):
     def visit_type_var(self, t: TypeVarType) -> bool:
         return t.variadic
 
+    def visit_tuple_type(self, t: TupleType) -> bool:
+        if t.expand_last_item:
+            # A tuple type is itself not variadic if it contains an expansion
+            return False
+        else:
+            return super(IsVariadic, self).visit_tuple_type(t)
+
+    def visit_callable_type(self, t: CallableType) -> bool:
+        # A callable type is itself not variadic if it contains an expansion
+        if len(t.arg_kinds) > 0 and t.arg_kinds[-1] == nodes.ARG_STAR:
+            return False
+        else:
+            return super(IsVariadic, self).visit_callable_type(t)
+
 
 class FetchVariadicTypeVar(TypeFold[TypeVarId]):
 
@@ -139,6 +153,19 @@ class FetchVariadicTypeVar(TypeFold[TypeVarId]):
     def visit_type_var(self, t: TypeVarType) -> TypeVarId:
         if t.variadic:
             return t.id
+
+    def visit_tuple_type(self, t: TupleType) -> TypeVarId:
+        if t.expand_last_item:
+            return self.fold_types(t.items[:-1])
+        else:
+            return super(IsVariadic, self).visit_tuple_type(t)
+
+    def visit_callable_type(self, t: CallableType) -> TypeVarId:
+        # A callable type is itself not variadic if it contains an expansion
+        if len(t.arg_kinds) > 0 and t.arg_kinds[-1] == nodes.ARG_STAR:
+            return self.fold_types(t.arg_types[:-1])
+        else:
+            return super(IsVariadic, self).visit_callable_type(t)
 
 
 class SubstituteVariable(TypeTranslator):
@@ -174,7 +201,7 @@ class ExpandVariadic(TypeTranslator):
     def visit_tuple_type(self, t: TupleType) -> Type:
         if t.expand_last_item:
 
-            variadic_id = t.accept(FetchVariadicTypeVar())
+            variadic_id = t.items[-1].accept(FetchVariadicTypeVar())
             if variadic_id in self.substitutions:
                 # We have some type variables to substitute in
                 new_items = t.items[:-1]  # all but the last, which is the variadic
@@ -192,3 +219,30 @@ class ExpandVariadic(TypeTranslator):
                 return t.fallback
         else:
             return super(ExpandVariadic, self).visit_tuple_type(t)
+
+    def visit_callable_type(self, t: CallableType) -> TypeVarId:
+        # A callable type is itself not variadic if it contains an expansion
+        if len(t.arg_kinds) > 0 and t.arg_kinds[-1] == nodes.ARG_STAR and t.arg_types[-1].accept(IsVariadic()):
+            variadic_id = t.arg_types[-1].accept(FetchVariadicTypeVar())
+            if variadic_id in self.substitutions:
+                new_args = t.arg_types[:-1]  # all but the last, which is the variadic
+                new_kinds = t.arg_kinds[:-1]
+                new_names = t.arg_names[:-1]
+                additional_variables = []  # type: List[TypeVarDef]
+                for idx, new_var_id in enumerate(self.substitutions[variadic_id]):
+                    substitutor = SubstituteVariable(variadic_id, new_var_id, idx)
+                    new_args.append(t.arg_types[-1].accept(substitutor))
+                    new_kinds.append(nodes.ARG_POS)
+                    new_names.append(None)
+                    additional_variables.append(substitutor.var)
+                return t.copy_modified(
+                    arg_types=self.translate_types(new_args),
+                    arg_kinds=new_kinds,
+                    arg_names=new_names,
+                    ret_type=t.ret_type.accept(self),
+                    variables=[v for v in t.variables if v != variadic_id] + additional_variables,
+                )
+            else:
+                return super(ExpandVariadic, self).visit_callable_type(t)
+        else:
+            return super(ExpandVariadic, self).visit_callable_type(t)
