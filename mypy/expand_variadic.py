@@ -8,6 +8,7 @@ from collections import defaultdict
 
 from mypy.types import (
     ANY_TYPE_STRATEGY,
+    AnyType,
     CallableType,
     TupleType,
     Type,
@@ -21,6 +22,7 @@ from mypy.types import (
 
 from mypy import nodes
 from mypy.nodes import Node
+from mypy.erasetype import TypeVarEraser
 
 
 def infer_expansions_for_callable(
@@ -36,9 +38,12 @@ def infer_expansions_for_callable(
         callee_kind = callee.arg_kinds[i]
         callee_arg = callee.arg_types[i]
         if callee_kind == nodes.ARG_STAR and callee_arg.accept(IsVariadic()):
-            expansions.append(
-                (callee_arg.accept(FetchVariadicTypeVar()), len(actuals))
-            )
+            if any(k != nodes.ARG_POS for k in (arg_kinds[actual] for actual in actuals)):
+                # Somebody splatted in an arg here, so don't make any assumptions.
+                pass
+            else:
+                expansions.append(
+                    (callee_arg.accept(FetchVariadicTypeVar()), len(actuals)))
         elif callee_kind == nodes.ARG_NAMED and callee_arg.accept(IsVariadic()):
             # How do we deal with **args?
             pass
@@ -76,18 +81,23 @@ def expand_variadic_callable(
         if kind == nodes.ARG_STAR and typ.accept(IsVariadic()):
             # Substitute in for the expansion
             old_id = typ.accept(FetchVariadicTypeVar())  # type: TypeVarId
-            assert old_id in exps
-            for idx in range(exps[old_id]):
-                new_id = TypeVarId.new(1)  # Uhh is this a "meta" variable?
-                substitutions[old_id].append(new_id)
-                new_kinds.append(nodes.ARG_POS)
-                substitutor = SubstituteVariable(old_id, new_id, idx)
-                new_types.append(typ.accept(substitutor))
-                additional_variables.append(substitutor.var)
-                if name is not None:
-                    new_names.append("%s_%d" % (name, idx))
-                else:
-                    new_names.append(None)
+            if old_id in exps:
+                for idx in range(exps[old_id]):
+                    new_id = TypeVarId.new(1)  # Uhh is this a "meta" variable?
+                    substitutions[old_id].append(new_id)
+                    new_kinds.append(nodes.ARG_POS)
+                    substitutor = SubstituteVariable(old_id, new_id, idx)
+                    new_types.append(typ.accept(substitutor))
+                    additional_variables.append(substitutor.var)
+                    if name is not None:
+                        new_names.append("%s_%d" % (name, idx))
+                    else:
+                        new_names.append(None)
+            else:
+                new_kinds.append(nodes.ARG_STAR)
+                new_types.append(typ.accept(TypeVarEraser(
+                            lambda i: old_id == i, AnyType())))
+                new_names.append(name)
         else:
             # TODO: Recursively descend here to expland any tuple or types of
             # callable args.
@@ -98,7 +108,10 @@ def expand_variadic_callable(
         var for var in callee.variables if var.id not in substitutions
     ] + additional_variables
 
-    # TODO: Expand type vars in return type
+    # Apply the substitutions we've calculated to all the new args
+    new_types = [typ.accept(ExpandVariadic(substitutions)) for typ in new_types]
+
+    # Apply the substitutions we've calculated to the return type
     new_ret_type = callee.ret_type.accept(ExpandVariadic(substitutions))
 
     return CallableType(
@@ -228,21 +241,23 @@ class ExpandVariadic(TypeTranslator):
                 new_args = t.arg_types[:-1]  # all but the last, which is the variadic
                 new_kinds = t.arg_kinds[:-1]
                 new_names = t.arg_names[:-1]
-                additional_variables = []  # type: List[TypeVarDef]
                 for idx, new_var_id in enumerate(self.substitutions[variadic_id]):
                     substitutor = SubstituteVariable(variadic_id, new_var_id, idx)
                     new_args.append(t.arg_types[-1].accept(substitutor))
                     new_kinds.append(nodes.ARG_POS)
                     new_names.append(None)
-                    additional_variables.append(substitutor.var)
                 return t.copy_modified(
                     arg_types=self.translate_types(new_args),
                     arg_kinds=new_kinds,
                     arg_names=new_names,
                     ret_type=t.ret_type.accept(self),
-                    variables=[v for v in t.variables if v != variadic_id] + additional_variables,
                 )
             else:
-                return super(ExpandVariadic, self).visit_callable_type(t)
+                new_args = t.arg_types[:-1]
+                new_args.append(
+                    t.arg_types[-1].accept(TypeVarEraser(
+                            lambda i: i == variadic_id,
+                            AnyType(implicit=True))))
+                return t.copy_modified(arg_types=new_args)
         else:
             return super(ExpandVariadic, self).visit_callable_type(t)
