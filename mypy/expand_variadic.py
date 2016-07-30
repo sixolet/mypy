@@ -114,21 +114,12 @@ def expand_variadic_callable(
     # Apply the substitutions we've calculated to the return type
     new_ret_type = callee.ret_type.accept(ExpandVariadic(substitutions))
 
-    return CallableType(
+    return callee.copy_modified(
         arg_types=new_types,
         arg_kinds=new_kinds,
         arg_names=new_names,
         ret_type=new_ret_type,
-        fallback = callee.fallback,
-        name = callee.name,
-        definition = callee.definition,
-        variables = new_variables,
-        line = callee.line,
-        is_ellipsis_args = callee.is_ellipsis_args,
-        implicit = callee.implicit,
-        is_classmethod_class = callee.is_classmethod_class,
-        special_sig = callee.special_sig,
-    )
+        variables = new_variables)
 
 
 class IsVariadic(TypeQuery):
