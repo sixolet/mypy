@@ -21,6 +21,15 @@ b = f(a)
 class A: pass
 class B: pass
 
+[case testKeywordOnlyArgumentOrderInsensitivity]
+import typing
+
+class A(object):
+    def f(*, a: int, b: str) -> None: pass
+
+class B(object):
+    def f(*, b: str, a: int) -> None: pass
+
 [case testSubtypingFunctionTypes]
 from typing import Callable
 
@@ -1458,8 +1467,10 @@ class A(Generic[t]):
 [case testRedefineFunction]
 def f(x): pass
 def g(x, y): pass
-def h(y): pass
+def h(x): pass
+def j(y): pass
 f = h
+f = j # E: Incompatible types in assignment (expression has type Callable[[Arg('y', Any, False)], Any], variable has type Callable[[Arg('x', Any, False)], Any])
 f = g # E: Incompatible types in assignment (expression has type Callable[[Any, Any], Any], variable has type Callable[[Any], Any])
 
 [case testRedefineFunction2]

@@ -653,6 +653,48 @@ class CallableType(FunctionLike):
             n -= 1
         return n
 
+    def argument_by_name(self, name: str) -> Optional[Tuple[
+            Optional[str],
+            Optional[int],
+            Type,
+            bool]]:
+        seen_star = False
+        for i, (arg_name, kind, typ) in enumerate(
+                zip(self.arg_names, self.arg_kinds, self.arg_types)):
+            # No more positional arguments after these.
+            if kind in (ARG_STAR, ARG_STAR2, ARG_NAMED, ARG_NAMED_OPT):
+                seen_star = True
+            if kind in (ARG_STAR, ARG_STAR2):
+                continue
+            if arg_name == name:
+                position = None if seen_star else i
+                return name, position, typ, kind in (ARG_POS, ARG_NAMED)
+        return None
+
+    def argument_by_position(self, position: int) -> Optional[Tuple[
+            Optional[str],
+            Optional[int],
+            Type,
+            bool]]:
+        if self.is_var_arg:
+            for kind, typ in zip(self.arg_kinds, self.arg_types):
+                if kind == ARG_STAR:
+                    star_type = typ
+                    break
+        if position >= len(self.arg_names):
+            if self.is_var_arg:
+                return None, position, star_type, False
+            else:
+                return None
+        name, kind, typ = self.arg_names[position], self.arg_kinds[position], self.arg_types[position]
+        if kind in (ARG_POS, ARG_OPT):
+            return name, position, typ, kind == ARG_POS
+        else:
+            if self.is_var_arg:
+                return None, position, star_type, False
+            else:
+                return None
+
     def items(self) -> List['CallableType']:
         return [self]
 

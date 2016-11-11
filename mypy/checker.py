@@ -38,7 +38,7 @@ import mypy.checkexpr
 from mypy.checkmember import map_type_from_supertype, bind_self
 from mypy import messages
 from mypy.subtypes import (
-    is_subtype, is_equivalent, is_proper_subtype, is_more_precise, restrict_subtype_away
+    is_subtype, is_callable_subtype, is_equivalent, is_proper_subtype, is_more_precise, restrict_subtype_away
 )
 from mypy.maptype import map_instance_to_supertype
 from mypy.semanal import fill_typevars, set_callable_name, refers_to_fullname
@@ -816,7 +816,7 @@ class TypeChecker(NodeVisitor[Type]):
     def check_getattr_method(self, typ: CallableType, context: Context) -> None:
         method_type = CallableType([AnyType(), self.named_type('builtins.str')],
                                    [nodes.ARG_POS, nodes.ARG_POS],
-                                   [None],
+                                   [None, None],
                                    AnyType(),
                                    self.named_type('builtins.function'))
         if not is_subtype(typ, method_type):
@@ -917,7 +917,12 @@ class TypeChecker(NodeVisitor[Type]):
         """
         # Use boolean variable to clarify code.
         fail = False
-        if not is_subtype(override, original):
+        if isinstance(override, CallableType) and isinstance(original, CallableType):
+            if not is_callable_subtype(
+                    override, original,
+                    ignore_return=False, ignore_positional_arg_names=True):
+                fail = True
+        elif not is_subtype(override, original):
             fail = True
         elif (not isinstance(original, Overloaded) and
               isinstance(override, Overloaded) and
@@ -962,6 +967,7 @@ class TypeChecker(NodeVisitor[Type]):
 
             if not emitted_msg:
                 # Fall back to generic incompatibility message.
+                # self.msg.fail("Override fail {}".format(self.msg.format_distinctly(override, original)), node)
                 self.msg.signature_incompatible_with_supertype(
                     name, name_in_super, supertype, node)
 
